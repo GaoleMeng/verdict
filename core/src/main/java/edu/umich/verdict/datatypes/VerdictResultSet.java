@@ -1,1133 +1,1164 @@
-/*
- * Copyright 2017 University of Michigan
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package edu.umich.verdict.datatypes;
+
+import edu.umich.verdict.column.Column;
+import edu.umich.verdict.datatypes.QueryResult;
+import edu.umich.verdict.datatypes.ColumnMetaData;
+import edu.umich.verdict.parser.VerdictSQLParser;
 
 import java.io.InputStream;
 import java.io.Reader;
 import java.math.BigDecimal;
 import java.net.URL;
-import java.sql.Array;
-import java.sql.Blob;
-import java.sql.Clob;
-import java.sql.Date;
-import java.sql.NClob;
-import java.sql.Ref;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.RowId;
-import java.sql.SQLException;
-import java.sql.SQLWarning;
-import java.sql.SQLXML;
-import java.sql.Statement;
-import java.sql.Time;
-import java.sql.Timestamp;
+import java.sql.*;
+import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 
+
 public class VerdictResultSet implements ResultSet {
+    private QueryResult qr;
+    private ResultSetMetaData rsmd;
+    private VerdictResultSetMetaData verdictRsmd;
+    private int curPosition;
+    private boolean closeFlag;
 
-    private ResultSet resultSet;
-    VerdictApproxResultMeta columnInfo;
-    private Map<Integer, Integer> columnMap;
+    public VerdictResultSet(ResultSet rs) throws SQLException {
+        try {
+            qr = new QueryResult();
+            rsmd = rs.getMetaData();
+            int columnNum = rsmd.getColumnCount();
+            ArrayList<ColumnMetaData> cmdList = new ArrayList<>();
+            ArrayList<HashMap<String, Object>> rows = new ArrayList<>();
 
-    /**
-     * Wraps the standard {@link java.sql.ResultSet ResultSet} class to report
-     * errors.
-     * 
-     * @param resultSet
-     * @param errors
-     *            If not null and there is an entry corresponding to a column (e.g.,
-     *            i-th errors entry for the i-th column), the values in the column
-     *            are approximate values, and the errors.get(i-1) provide the upper
-     *            bound on the standard deviation.
-     */
-    public VerdictResultSet(ResultSet resultSet, VerdictApproxResultMeta columnInfo) {
-        this.resultSet = resultSet;
-        this.columnInfo = columnInfo;
-    }
-
-    public VerdictResultSet(ResultSet resultSet, VerdictApproxResultMeta columnInfo, Map<Integer, Integer> columnMap) {
-        this(resultSet, columnInfo);
-        this.columnMap = columnMap;
-    }
-
-    public static VerdictResultSet emptyResult() {
-        final VerdictResultSetMetaData meta = new VerdictResultSetMetaData(null, null) {
-            @Override
-            public int getColumnCount() {
-                return 0;
+            // iterate through all the column meta data
+            for (int i = 1; i <= columnNum; i++) {
+                ColumnMetaData cmd = new ColumnMetaData();
+                String columnType = rsmd.getColumnTypeName(i);
+                String columnName = rsmd.getColumnName(i);
+                cmd.setColumnName(columnName);
+                cmd.setColumnType(columnType);
+                cmdList.add(cmd);
             }
 
-            @Override
-            public String getTableName(int column) throws SQLException {
-                return "";
+            while (rs.next()) {
+                HashMap tmp = new HashMap<String, Object>();
+                for (int i = 1; i <= columnNum; i++) {
+                    String columnName = cmdList.get(i - 1).getColumnName();
+                    Object content = rs.getObject(i);
+                    tmp.put(columnName, content);
+                }
+                rows.add(tmp);
             }
-        };
-
-        VerdictResultSet rs = new VerdictResultSet(null, null) {
-            @Override
-            public boolean next() {
-                return false;
-            }
-
-            @Override
-            public void close() {
-            }
-
-            @Override
-            public ResultSetMetaData getMetaData() {
-                return meta;
-            }
-        };
-
-        return rs;
-    }
-
-    public static VerdictResultSet fromList(final List<List<String>> data, final List<String> columnLabels) {
-
-        final VerdictResultSetMetaData meta = new VerdictResultSetMetaData(null, null) {
-            @Override
-            public int getColumnType(int column) {
-                return java.sql.Types.VARCHAR;
-            }
-
-            @Override
-            public String getColumnName(int column) {
-                return columnLabels.get(column - 1);
-            }
-
-            @Override
-            public String getColumnLabel(int column) {
-                return columnLabels.get(column - 1);
-            }
-
-            @Override
-            public int getColumnCount() {
-                return columnLabels.size();
-            }
-
-            @Override
-            public String getColumnTypeName(int column) {
-                return "VARCHAR";
-            }
-
-            @Override
-            public String getTableName(int column) {
-                return "";
-            }
-        };
-
-        VerdictResultSet rs = new VerdictResultSet(null, null) {
-            private int index = -1;
-
-            @Override
-            public boolean next() {
-                index++;
-                return index < data.size();
-            }
-
-            @Override
-            public String getString(int columnIndex) {
-                return data.get(index).get(columnIndex - 1);
-            }
-
-            @Override
-            public String getObject(int columnIndex) {
-                return data.get(index).get(columnIndex - 1);
-            }
-
-            @Override
-            public void close() {
-            }
-
-            @Override
-            public ResultSetMetaData getMetaData() {
-                return meta;
-            }
-        };
-
-        return rs;
-    }
-
-    private int getMappedColumn(int i) {
-        if (columnMap == null) {
-            return i;
-        } else {
-            return columnMap.get(i);
+            qr.setColumnMetaData(cmdList);
+            qr.setRows(rows);
+            this.curPosition = -1;
+            closeFlag = false;
+            verdictRsmd = new VerdictResultSetMetaData(qr, rsmd);
+        }
+        catch (SQLException e) {
+            e.printStackTrace();
         }
     }
 
-    @Override
-    public <T> T unwrap(Class<T> iface) throws SQLException {
-        return resultSet.unwrap(iface);
+    public VerdictResultSet(QueryResult re) {
+        this.qr = re;
+        this.curPosition = -1;
     }
 
-    @Override
-    public boolean isWrapperFor(Class<?> iface) throws SQLException {
-        return resultSet.isWrapperFor(iface);
+    public void deleteColumn(String columnLabel) throws SQLException {
+        if (closeFlag) throw new SQLException();
+        try {
+            ArrayList<HashMap<String, Object>> rows = qr.getRows();
+            if (rows.size() == 0) {
+                throw new SQLException();
+            }
+            int columnNums = qr.getColumnMetaData().size();
+            for (int i = 0; i < rows.size(); i++) {
+                if (!rows.get(i).containsKey(columnLabel)) {
+                    throw new SQLException();
+                }
+                rows.get(i).remove(columnLabel);
+            }
+            ArrayList<ColumnMetaData> metaData = qr.getColumnMetaData();
+            for (int i = 0; i < columnNums; i++) {
+                if (metaData.get(i).getColumnName().equals(columnLabel)) {
+                    metaData.remove(i);
+                    break;
+                }
+            }
+            qr.setRows(rows);
+            qr.setColumnMetaData(metaData);
+        }
+        catch (Exception e) {
+            throw new SQLException();
+        }
+    }
+
+    // check the group count column, if the group count is smaller than threshold
+    // we change the error bound to inf,
+    public void checkAndRevise(int threshold) throws SQLException {
+        if (closeFlag) throw new SQLException();
+
+        ArrayList<ColumnMetaData> metaData = qr.getColumnMetaData();
+        int columnNums = metaData.size();
+        boolean check_exists = false;
+        for (int i = 0; i < columnNums; i++) {
+            if (metaData.get(i).getColumnName().equals("_verdict_group_count")) {
+                check_exists = true;
+                break;
+            }
+        }
+
+        if (!check_exists) {
+            throw new SQLException();
+        }
+
+        // group count column exists, check every row of the verdictResultSet
+        ArrayList<HashMap<String, Object>> rows = qr.getRows();
+        for (int i = 1; i < columnNums; i++) {
+            if (metaData.get(i).getColumnName().endsWith("_err") &&
+                    metaData.get(i - 1).getColumnName().concat("_err").equals(metaData.get(i).getColumnName())) {
+                for (int j = 0; j < rows.size(); j++) {
+//                    Long tmp = (Long) rows.get(j).get("_verdict_group_count");
+                    if (threshold >= (Long) rows.get(j).get("_verdict_group_count"))
+                        rows.get(j).put(metaData.get(i).getColumnName(), new Long(-1));
+                }
+            }
+        }
+        qr.setRows(rows);
+        qr.setColumnMetaData(metaData);
     }
 
     @Override
     public boolean next() throws SQLException {
-        return resultSet.next();
+        if (closeFlag) throw new SQLException();
+        if (curPosition == qr.getRows().size() - 1) return false;
+        curPosition++;
+        return true;
     }
 
+    // need discussion about what it can do:
     @Override
-    public void close() throws SQLException {
-        resultSet.close();
-    }
-
-    @Override
-    public boolean wasNull() throws SQLException {
-        return resultSet.wasNull();
-    }
-
-    @Override
-    public String getString(int columnIndex) throws SQLException {
-        return resultSet.getString(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public boolean getBoolean(int columnIndex) throws SQLException {
-        return resultSet.getBoolean(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public byte getByte(int columnIndex) throws SQLException {
-        return resultSet.getByte(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public short getShort(int columnIndex) throws SQLException {
-        return resultSet.getShort(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public int getInt(int columnIndex) throws SQLException {
-        return resultSet.getInt(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public long getLong(int columnIndex) throws SQLException {
-        return resultSet.getLong(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public float getFloat(int columnIndex) throws SQLException {
-        return resultSet.getFloat(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public double getDouble(int columnIndex) throws SQLException {
-        return resultSet.getDouble(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public BigDecimal getBigDecimal(int columnIndex, int scale) throws SQLException {
-        return resultSet.getBigDecimal(getMappedColumn(columnIndex), scale);
-    }
-
-    @Override
-    public byte[] getBytes(int columnIndex) throws SQLException {
-        return resultSet.getBytes(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Date getDate(int columnIndex) throws SQLException {
-        return resultSet.getDate(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Time getTime(int columnIndex) throws SQLException {
-        return resultSet.getTime(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Timestamp getTimestamp(int columnIndex) throws SQLException {
-        return resultSet.getTimestamp(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public InputStream getAsciiStream(int columnIndex) throws SQLException {
-        return resultSet.getAsciiStream(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public InputStream getUnicodeStream(int columnIndex) throws SQLException {
-        return resultSet.getUnicodeStream(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public InputStream getBinaryStream(int columnIndex) throws SQLException {
-        return resultSet.getBinaryStream(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public String getString(String columnLabel) throws SQLException {
-        return resultSet.getString(columnLabel);
-    }
-
-    @Override
-    public boolean getBoolean(String columnLabel) throws SQLException {
-        return resultSet.getBoolean(columnLabel);
-    }
-
-    @Override
-    public byte getByte(String columnLabel) throws SQLException {
-        return resultSet.getByte(columnLabel);
-    }
-
-    @Override
-    public short getShort(String columnLabel) throws SQLException {
-        return resultSet.getShort(columnLabel);
-    }
-
-    @Override
-    public int getInt(String columnLabel) throws SQLException {
-        return resultSet.getInt(columnLabel);
-    }
-
-    @Override
-    public long getLong(String columnLabel) throws SQLException {
-        return resultSet.getLong(columnLabel);
-    }
-
-    @Override
-    public float getFloat(String columnLabel) throws SQLException {
-        return resultSet.getFloat(columnLabel);
-    }
-
-    @Override
-    public double getDouble(String columnLabel) throws SQLException {
-        return resultSet.getDouble(columnLabel);
-    }
-
-    @Override
-    public BigDecimal getBigDecimal(String columnLabel, int scale) throws SQLException {
-        return resultSet.getBigDecimal(columnLabel, scale);
-    }
-
-    @Override
-    public byte[] getBytes(String columnLabel) throws SQLException {
-        return resultSet.getBytes(columnLabel);
-    }
-
-    @Override
-    public Date getDate(String columnLabel) throws SQLException {
-        return resultSet.getDate(columnLabel);
-    }
-
-    @Override
-    public Time getTime(String columnLabel) throws SQLException {
-        return resultSet.getTime(columnLabel);
-    }
-
-    @Override
-    public Timestamp getTimestamp(String columnLabel) throws SQLException {
-        return resultSet.getTimestamp(columnLabel);
-    }
-
-    @Override
-    public InputStream getAsciiStream(String columnLabel) throws SQLException {
-        return resultSet.getAsciiStream(columnLabel);
-    }
-
-    @Override
-    public InputStream getUnicodeStream(String columnLabel) throws SQLException {
-        return resultSet.getUnicodeStream(columnLabel);
-    }
-
-    @Override
-    public InputStream getBinaryStream(String columnLabel) throws SQLException {
-        return resultSet.getBinaryStream(columnLabel);
-    }
-
-    @Override
-    public SQLWarning getWarnings() throws SQLException {
-        return resultSet.getWarnings();
-    }
-
-    @Override
-    public void clearWarnings() throws SQLException {
-        resultSet.clearWarnings();
-    }
-
-    @Override
-    public String getCursorName() throws SQLException {
-        return resultSet.getCursorName();
-    }
-
-    @Override
-    public ResultSetMetaData getMetaData() throws SQLException {
-        if (columnMap == null)
-            return new VerdictResultSetMetaData(resultSet.getMetaData(), columnInfo);
-        else
-            return new VerdictResultSetMetaData(resultSet.getMetaData(), columnInfo, columnMap);
-    }
-
-    @Override
-    public Object getObject(int columnIndex) throws SQLException {
-        return resultSet.getObject(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Object getObject(String columnLabel) throws SQLException {
-        return resultSet.getObject(columnLabel);
-    }
-
-    @Override
-    public int findColumn(String columnLabel) throws SQLException {
-        return resultSet.findColumn(columnLabel);
-    }
-
-    @Override
-    public Reader getCharacterStream(int columnIndex) throws SQLException {
-        return resultSet.getCharacterStream(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Reader getCharacterStream(String columnLabel) throws SQLException {
-        return resultSet.getCharacterStream(columnLabel);
-    }
-
-    @Override
-    public BigDecimal getBigDecimal(int columnIndex) throws SQLException {
-        return resultSet.getBigDecimal(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public BigDecimal getBigDecimal(String columnLabel) throws SQLException {
-        return resultSet.getBigDecimal(columnLabel);
-    }
-
-    @Override
-    public boolean isBeforeFirst() throws SQLException {
-        return resultSet.isBeforeFirst();
-    }
-
-    @Override
-    public boolean isAfterLast() throws SQLException {
-        return resultSet.isAfterLast();
-    }
-
-    @Override
-    public boolean isFirst() throws SQLException {
-        return resultSet.isFirst();
-    }
-
-    @Override
-    public boolean isLast() throws SQLException {
-        return resultSet.isLast();
-    }
-
-    @Override
-    public void beforeFirst() throws SQLException {
-        resultSet.beforeFirst();
-    }
-
-    @Override
-    public void afterLast() throws SQLException {
-        resultSet.afterLast();
+    public void close() throws SQLException{
+        if (closeFlag) throw new SQLException();
+        qr = null;
+        rsmd = null;
+        closeFlag = true;
     }
 
     @Override
     public boolean first() throws SQLException {
-        return resultSet.first();
+        if (closeFlag) throw new SQLException();
+        try {
+            if (qr.getRows().size() == 0) return false;
+            curPosition = 0;
+            return true;
+        }
+        catch (Exception e) {
+            throw new SQLException();
+        }
     }
 
     @Override
-    public boolean last() throws SQLException {
-        return resultSet.last();
+    public boolean getBoolean(int columnIndex) throws SQLException {
+        if (closeFlag) throw new SQLException();
+        try {
+            String key = qr.getColumnMetaData().get(columnIndex - 1).getColumnName();
+            Object result = qr.getRows().get(curPosition).get(key);
+            return (Boolean) result;
+        }
+        catch (Exception e) {
+            throw new SQLException();
+        }
     }
 
     @Override
-    public int getRow() throws SQLException {
-        return resultSet.getRow();
+    public boolean getBoolean(String columnLabel) throws SQLException {
+        if (closeFlag) throw new SQLException();
+        try {
+            Object result = qr.getRows().get(curPosition).get(columnLabel);
+            return (Boolean) result;
+        }
+        catch (Exception e) {
+            throw new SQLException();
+        }
     }
 
     @Override
-    public boolean absolute(int row) throws SQLException {
-        return resultSet.absolute(row);
+    public byte getByte(String columnLabel) throws SQLException {
+        return 0;
     }
 
     @Override
-    public boolean relative(int rows) throws SQLException {
-        return resultSet.relative(rows);
+    public java.sql.Date getDate(int columnIndex) throws SQLException {
+        return getObject(columnIndex, java.sql.Date.class);
     }
 
     @Override
-    public boolean previous() throws SQLException {
-        return resultSet.previous();
+    public Time getTime(int columnIndex) throws SQLException {
+        return null;
     }
 
     @Override
-    public void setFetchDirection(int direction) throws SQLException {
-        resultSet.setFetchDirection(direction);
+    public Timestamp getTimestamp(int columnIndex) throws SQLException {
+        return null;
     }
 
     @Override
-    public int getFetchDirection() throws SQLException {
-        return resultSet.getFetchDirection();
+    public InputStream getAsciiStream(int columnIndex) throws SQLException {
+        return null;
     }
 
     @Override
-    public void setFetchSize(int rows) throws SQLException {
-        resultSet.setFetchSize(rows);
+    public InputStream getUnicodeStream(int columnIndex) throws SQLException {
+        return null;
     }
 
     @Override
-    public int getFetchSize() throws SQLException {
-        return resultSet.getFetchSize();
+    public InputStream getBinaryStream(int columnIndex) throws SQLException {
+        return null;
     }
 
     @Override
-    public int getType() throws SQLException {
-        return resultSet.getType();
+    public java.sql.Date getDate(String columnLabel) throws SQLException {
+        return getObject(columnLabel, java.sql.Date.class);
     }
 
     @Override
-    public int getConcurrency() throws SQLException {
-        return resultSet.getConcurrency();
+    public Time getTime(String columnLabel) throws SQLException {
+        return null;
     }
 
     @Override
-    public boolean rowUpdated() throws SQLException {
-        return resultSet.rowUpdated();
+    public Timestamp getTimestamp(String columnLabel) throws SQLException {
+        return null;
     }
 
     @Override
-    public boolean rowInserted() throws SQLException {
-        return resultSet.rowInserted();
+    public InputStream getAsciiStream(String columnLabel) throws SQLException {
+        return null;
     }
 
     @Override
-    public boolean rowDeleted() throws SQLException {
-        return resultSet.rowDeleted();
+    public InputStream getUnicodeStream(String columnLabel) throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateNull(int columnIndex) throws SQLException {
-        resultSet.updateNull(getMappedColumn(columnIndex));
+    public InputStream getBinaryStream(String columnLabel) throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateBoolean(int columnIndex, boolean x) throws SQLException {
-        resultSet.updateBoolean(getMappedColumn(columnIndex), x);
+    public SQLWarning getWarnings() throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateByte(int columnIndex, byte x) throws SQLException {
-        resultSet.updateByte(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateShort(int columnIndex, short x) throws SQLException {
-        resultSet.updateShort(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateInt(int columnIndex, int x) throws SQLException {
-        resultSet.updateInt(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateLong(int columnIndex, long x) throws SQLException {
-        resultSet.updateLong(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateFloat(int columnIndex, float x) throws SQLException {
-        resultSet.updateFloat(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateDouble(int columnIndex, double x) throws SQLException {
-        resultSet.updateDouble(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateBigDecimal(int columnIndex, BigDecimal x) throws SQLException {
-        resultSet.updateBigDecimal(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateString(int columnIndex, String x) throws SQLException {
-        resultSet.updateString(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateBytes(int columnIndex, byte[] x) throws SQLException {
-        resultSet.updateBytes(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateDate(int columnIndex, Date x) throws SQLException {
-        resultSet.updateDate(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateTime(int columnIndex, Time x) throws SQLException {
-        resultSet.updateTime(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateTimestamp(int columnIndex, Timestamp x) throws SQLException {
-        resultSet.updateTimestamp(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateAsciiStream(int columnIndex, InputStream x, int length) throws SQLException {
-        resultSet.updateAsciiStream(getMappedColumn(columnIndex), x, length);
-    }
-
-    @Override
-    public void updateBinaryStream(int columnIndex, InputStream x, int length) throws SQLException {
-        resultSet.updateBinaryStream(getMappedColumn(columnIndex), x, length);
-    }
-
-    @Override
-    public void updateCharacterStream(int columnIndex, Reader x, int length) throws SQLException {
-        resultSet.updateCharacterStream(getMappedColumn(columnIndex), x, length);
-    }
-
-    @Override
-    public void updateObject(int columnIndex, Object x, int scaleOrLength) throws SQLException {
-        resultSet.updateObject(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateObject(int columnIndex, Object x) throws SQLException {
-        resultSet.updateObject(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateNull(String columnLabel) throws SQLException {
-        resultSet.updateNull(columnLabel);
-    }
-
-    @Override
-    public void updateBoolean(String columnLabel, boolean x) throws SQLException {
-        resultSet.updateBoolean(columnLabel, x);
-    }
-
-    @Override
-    public void updateByte(String columnLabel, byte x) throws SQLException {
-        resultSet.updateByte(columnLabel, x);
-    }
-
-    @Override
-    public void updateShort(String columnLabel, short x) throws SQLException {
-        resultSet.updateShort(columnLabel, x);
-    }
-
-    @Override
-    public void updateInt(String columnLabel, int x) throws SQLException {
-        resultSet.updateInt(columnLabel, x);
-    }
-
-    @Override
-    public void updateLong(String columnLabel, long x) throws SQLException {
-        resultSet.updateLong(columnLabel, x);
-    }
-
-    @Override
-    public void updateFloat(String columnLabel, float x) throws SQLException {
-        resultSet.updateFloat(columnLabel, x);
-    }
-
-    @Override
-    public void updateDouble(String columnLabel, double x) throws SQLException {
-        resultSet.updateDouble(columnLabel, x);
-    }
-
-    @Override
-    public void updateBigDecimal(String columnLabel, BigDecimal x) throws SQLException {
-        resultSet.updateBigDecimal(columnLabel, x);
-    }
-
-    @Override
-    public void updateString(String columnLabel, String x) throws SQLException {
-        resultSet.updateString(columnLabel, x);
-    }
-
-    @Override
-    public void updateBytes(String columnLabel, byte[] x) throws SQLException {
-        resultSet.updateBytes(columnLabel, x);
-    }
-
-    @Override
-    public void updateDate(String columnLabel, Date x) throws SQLException {
-        resultSet.updateDate(columnLabel, x);
-    }
-
-    @Override
-    public void updateTime(String columnLabel, Time x) throws SQLException {
-        resultSet.updateTime(columnLabel, x);
-    }
-
-    @Override
-    public void updateTimestamp(String columnLabel, Timestamp x) throws SQLException {
-        resultSet.updateTimestamp(columnLabel, x);
-    }
-
-    @Override
-    public void updateAsciiStream(String columnLabel, InputStream x, int length) throws SQLException {
-        resultSet.updateAsciiStream(columnLabel, x, length);
-    }
-
-    @Override
-    public void updateBinaryStream(String columnLabel, InputStream x, int length) throws SQLException {
-        resultSet.updateBinaryStream(columnLabel, x, length);
-    }
-
-    @Override
-    public void updateCharacterStream(String columnLabel, Reader reader, int length) throws SQLException {
-        resultSet.updateCharacterStream(columnLabel, reader, length);
-    }
-
-    @Override
-    public void updateObject(String columnLabel, Object x, int scaleOrLength) throws SQLException {
-        resultSet.updateObject(columnLabel, x);
-    }
-
-    @Override
-    public void updateObject(String columnLabel, Object x) throws SQLException {
-        resultSet.updateObject(columnLabel, x);
-    }
-
-    @Override
-    public void insertRow() throws SQLException {
-        resultSet.insertRow();
-    }
-
-    @Override
-    public void updateRow() throws SQLException {
-        resultSet.updateRow();
-    }
-
-    @Override
-    public void deleteRow() throws SQLException {
-        resultSet.deleteRow();
-    }
-
-    @Override
-    public void refreshRow() throws SQLException {
-        resultSet.refreshRow();
-    }
-
-    @Override
-    public void cancelRowUpdates() throws SQLException {
-        resultSet.cancelRowUpdates();
-    }
-
-    @Override
-    public void moveToInsertRow() throws SQLException {
-        resultSet.moveToInsertRow();
-    }
-
-    @Override
-    public void moveToCurrentRow() throws SQLException {
-        resultSet.moveToCurrentRow();
-    }
-
-    @Override
-    public Statement getStatement() throws SQLException {
-        return resultSet.getStatement();
-    }
-
-    @Override
-    public Object getObject(int columnIndex, Map<String, Class<?>> map) throws SQLException {
-        return resultSet.getObject(getMappedColumn(columnIndex), map);
-    }
-
-    @Override
-    public Ref getRef(int columnIndex) throws SQLException {
-        return resultSet.getRef(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Blob getBlob(int columnIndex) throws SQLException {
-        return resultSet.getBlob(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Clob getClob(int columnIndex) throws SQLException {
-        return resultSet.getClob(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Array getArray(int columnIndex) throws SQLException {
-        return resultSet.getArray(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Object getObject(String columnLabel, Map<String, Class<?>> map) throws SQLException {
-        return resultSet.getObject(columnLabel, map);
-    }
-
-    @Override
-    public Ref getRef(String columnLabel) throws SQLException {
-        return resultSet.getRef(columnLabel);
-    }
-
-    @Override
-    public Blob getBlob(String columnLabel) throws SQLException {
-        return resultSet.getBlob(columnLabel);
-    }
-
-    @Override
-    public Clob getClob(String columnLabel) throws SQLException {
-        return resultSet.getClob(columnLabel);
-    }
-
-    @Override
-    public Array getArray(String columnLabel) throws SQLException {
-        return resultSet.getArray(columnLabel);
-    }
-
-    @Override
-    public Date getDate(int columnIndex, Calendar cal) throws SQLException {
-        return resultSet.getDate(getMappedColumn(columnIndex), cal);
-    }
-
-    @Override
-    public Date getDate(String columnLabel, Calendar cal) throws SQLException {
-        return resultSet.getDate(columnLabel, cal);
-    }
-
-    @Override
-    public Time getTime(int columnIndex, Calendar cal) throws SQLException {
-        return resultSet.getTime(getMappedColumn(columnIndex), cal);
-    }
-
-    @Override
-    public Time getTime(String columnLabel, Calendar cal) throws SQLException {
-        return resultSet.getTime(columnLabel, cal);
-    }
-
-    @Override
-    public Timestamp getTimestamp(int columnIndex, Calendar cal) throws SQLException {
-        return resultSet.getTimestamp(getMappedColumn(columnIndex), cal);
-    }
-
-    @Override
-    public Timestamp getTimestamp(String columnLabel, Calendar cal) throws SQLException {
-        return resultSet.getTimestamp(columnLabel, cal);
-    }
-
-    @Override
-    public URL getURL(int columnIndex) throws SQLException {
-        return resultSet.getURL(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public URL getURL(String columnLabel) throws SQLException {
-        return resultSet.getURL(columnLabel);
-    }
-
-    @Override
-    public void updateRef(int columnIndex, Ref x) throws SQLException {
-        resultSet.updateRef(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateRef(String columnLabel, Ref x) throws SQLException {
-        resultSet.updateRef(columnLabel, x);
-    }
-
-    @Override
-    public void updateBlob(int columnIndex, Blob x) throws SQLException {
-        resultSet.updateBlob(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateBlob(String columnLabel, Blob x) throws SQLException {
-        resultSet.updateBlob(columnLabel, x);
-    }
-
-    @Override
-    public void updateClob(int columnIndex, Clob x) throws SQLException {
-        resultSet.updateClob(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateClob(String columnLabel, Clob x) throws SQLException {
-        resultSet.updateClob(columnLabel, x);
-    }
-
-    @Override
-    public void updateArray(int columnIndex, Array x) throws SQLException {
-        resultSet.updateArray(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateArray(String columnLabel, Array x) throws SQLException {
-        resultSet.updateArray(columnLabel, x);
-    }
-
-    @Override
-    public RowId getRowId(int columnIndex) throws SQLException {
-        return resultSet.getRowId(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public RowId getRowId(String columnLabel) throws SQLException {
-        return resultSet.getRowId(columnLabel);
-    }
-
-    @Override
-    public void updateRowId(int columnIndex, RowId x) throws SQLException {
-        resultSet.updateRowId(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateRowId(String columnLabel, RowId x) throws SQLException {
-        resultSet.updateRowId(columnLabel, x);
-    }
-
-    @Override
-    public int getHoldability() throws SQLException {
-        return resultSet.getHoldability();
-    }
-
-    @Override
-    public boolean isClosed() throws SQLException {
-        return resultSet.isClosed();
-    }
-
-    @Override
-    public void updateNString(int columnIndex, String nString) throws SQLException {
-        resultSet.updateString(getMappedColumn(columnIndex), nString);
-    }
-
-    @Override
-    public void updateNString(String columnLabel, String nString) throws SQLException {
-        resultSet.updateNString(columnLabel, nString);
-    }
-
-    @Override
-    public void updateNClob(int columnIndex, NClob nClob) throws SQLException {
-        resultSet.updateNClob(getMappedColumn(columnIndex), nClob);
-    }
-
-    @Override
-    public void updateNClob(String columnLabel, NClob nClob) throws SQLException {
-        resultSet.updateNClob(columnLabel, nClob);
-    }
-
-    @Override
-    public NClob getNClob(int columnIndex) throws SQLException {
-        return resultSet.getNClob(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public NClob getNClob(String columnLabel) throws SQLException {
-        return resultSet.getNClob(columnLabel);
-    }
-
-    @Override
-    public SQLXML getSQLXML(int columnIndex) throws SQLException {
-        return resultSet.getSQLXML(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public SQLXML getSQLXML(String columnLabel) throws SQLException {
-        return resultSet.getSQLXML(columnLabel);
-    }
-
-    @Override
-    public void updateSQLXML(int columnIndex, SQLXML xmlObject) throws SQLException {
-        resultSet.updateSQLXML(getMappedColumn(columnIndex), xmlObject);
-    }
-
-    @Override
-    public void updateSQLXML(String columnLabel, SQLXML xmlObject) throws SQLException {
-        resultSet.updateSQLXML(columnLabel, xmlObject);
-    }
-
-    @Override
-    public String getNString(int columnIndex) throws SQLException {
-        return resultSet.getNString(getMappedColumn(columnIndex));
-    }
+    public void clearWarnings() throws SQLException {
 
-    @Override
-    public String getNString(String columnLabel) throws SQLException {
-        return resultSet.getNString(columnLabel);
-    }
-
-    @Override
-    public Reader getNCharacterStream(int columnIndex) throws SQLException {
-        return resultSet.getNCharacterStream(getMappedColumn(columnIndex));
-    }
-
-    @Override
-    public Reader getNCharacterStream(String columnLabel) throws SQLException {
-        return resultSet.getCharacterStream(columnLabel);
-    }
-
-    @Override
-    public void updateNCharacterStream(int columnIndex, Reader x, long length) throws SQLException {
-        resultSet.updateCharacterStream(getMappedColumn(columnIndex), x);
-    }
-
-    @Override
-    public void updateNCharacterStream(String columnLabel, Reader reader, long length) throws SQLException {
-        resultSet.updateCharacterStream(columnLabel, reader);
     }
 
     @Override
-    public void updateAsciiStream(int columnIndex, InputStream x, long length) throws SQLException {
-        resultSet.updateAsciiStream(getMappedColumn(columnIndex), x);
+    public String getCursorName() throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateBinaryStream(int columnIndex, InputStream x, long length) throws SQLException {
-        resultSet.updateBinaryStream(getMappedColumn(columnIndex), x);
+    public double getDouble(int columnIndex) throws SQLException {
+        return getObject(columnIndex, Long.class).doubleValue();
     }
 
     @Override
-    public void updateCharacterStream(int columnIndex, Reader x, long length) throws SQLException {
-        resultSet.updateCharacterStream(getMappedColumn(columnIndex), x);
+    public BigDecimal getBigDecimal(int columnIndex, int scale) throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateAsciiStream(String columnLabel, InputStream x, long length) throws SQLException {
-        resultSet.updateAsciiStream(columnLabel, x);
+    public double getDouble(String columnLabel) throws SQLException {
+        return getObject(columnLabel, Long.class).doubleValue();
     }
 
     @Override
-    public void updateBinaryStream(String columnLabel, InputStream x, long length) throws SQLException {
-        resultSet.updateBinaryStream(columnLabel, x);
+    public BigDecimal getBigDecimal(String columnLabel, int scale) throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateCharacterStream(String columnLabel, Reader reader, long length) throws SQLException {
-        resultSet.updateCharacterStream(columnLabel, reader);
+    public byte[] getBytes(String columnLabel) throws SQLException {
+        return new byte[0];
     }
 
     @Override
-    public void updateBlob(int columnIndex, InputStream inputStream, long length) throws SQLException {
-        resultSet.updateBlob(getMappedColumn(columnIndex), inputStream, length);
+    public float getFloat(int columnIndex) throws SQLException {
+        return getObject(columnIndex, Long.class).floatValue();
     }
 
     @Override
-    public void updateBlob(String columnLabel, InputStream inputStream, long length) throws SQLException {
-        resultSet.updateBlob(columnLabel, inputStream, length);
+    public float getFloat(String columnLabel) throws SQLException {
+        return getObject(columnLabel, Long.class).floatValue();
     }
 
-    @Override
-    public void updateClob(int columnIndex, Reader reader, long length) throws SQLException {
-        resultSet.updateClob(getMappedColumn(columnIndex), reader, length);
-    }
-
-    @Override
-    public void updateClob(String columnLabel, Reader reader, long length) throws SQLException {
-        resultSet.updateClob(columnLabel, reader, length);
-    }
 
     @Override
-    public void updateNClob(int columnIndex, Reader reader, long length) throws SQLException {
-        resultSet.updateNClob(getMappedColumn(columnIndex), reader, length);
+    public int getInt(int columnIndex) throws SQLException {
+        return getObject(columnIndex, Long.class).intValue();
     }
 
     @Override
-    public void updateNClob(String columnLabel, Reader reader, long length) throws SQLException {
-        resultSet.updateNClob(columnLabel, reader, length);
+    public int getInt(String columnLabel) throws SQLException {
+        return getObject(columnLabel, Long.class).intValue();
     }
 
     @Override
-    public void updateNCharacterStream(int columnIndex, Reader x) throws SQLException {
-        resultSet.updateCharacterStream(getMappedColumn(columnIndex), x);
+    public long getLong(int columnIndex) throws SQLException {
+        return getObject(columnIndex, Long.class);
     }
 
     @Override
-    public void updateNCharacterStream(String columnLabel, Reader reader) throws SQLException {
-        resultSet.updateCharacterStream(columnLabel, reader);
+    public long getLong(String columnLabel) throws SQLException {
+        return getObject(columnLabel, Long.class);
     }
 
     @Override
-    public void updateAsciiStream(int columnIndex, InputStream x) throws SQLException {
-        resultSet.updateAsciiStream(getMappedColumn(columnIndex), x);
+    public short getShort(int columnIndex) throws SQLException {
+        return getObject(columnIndex, Long.class).shortValue();
     }
 
     @Override
-    public void updateBinaryStream(int columnIndex, InputStream x) throws SQLException {
-        resultSet.updateBinaryStream(getMappedColumn(columnIndex), x);
+    public short getShort(String columnLabel) throws SQLException {
+        return getObject(columnLabel, Long.class).shortValue();
     }
 
     @Override
-    public void updateCharacterStream(int columnIndex, Reader x) throws SQLException {
-        resultSet.updateCharacterStream(getMappedColumn(columnIndex), x);
+    public ResultSetMetaData getMetaData() throws SQLException {
+        return verdictRsmd;
     }
 
     @Override
-    public void updateAsciiStream(String columnLabel, InputStream x) throws SQLException {
-        resultSet.updateAsciiStream(columnLabel, x);
+    public Object getObject(int columnIndex) throws SQLException {
+        if (closeFlag) throw new SQLException();
+        try {
+            String key = qr.getColumnMetaData().get(columnIndex - 1).getColumnName();
+            Object result = qr.getRows().get(curPosition).get(key);
+            return result;
+        }
+        catch (Exception e) {
+            throw new SQLException();
+        }
     }
 
     @Override
-    public void updateBinaryStream(String columnLabel, InputStream x) throws SQLException {
-        resultSet.updateBinaryStream(columnLabel, x);
+    public Object getObject(String columnLabel) throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateCharacterStream(String columnLabel, Reader reader) throws SQLException {
-        resultSet.updateCharacterStream(columnLabel, reader);
+    public int findColumn(String columnLabel) throws SQLException {
+        return 0;
     }
 
     @Override
-    public void updateBlob(int columnIndex, InputStream inputStream) throws SQLException {
-        resultSet.updateBlob(getMappedColumn(columnIndex), inputStream);
+    public Reader getCharacterStream(int columnIndex) throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateBlob(String columnLabel, InputStream inputStream) throws SQLException {
-        resultSet.updateBlob(columnLabel, inputStream);
+    public Reader getCharacterStream(String columnLabel) throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateClob(int columnIndex, Reader reader) throws SQLException {
-        resultSet.updateClob(getMappedColumn(columnIndex), reader);
+    public BigDecimal getBigDecimal(int columnIndex) throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateClob(String columnLabel, Reader reader) throws SQLException {
-        resultSet.updateClob(columnLabel, reader);
+    public BigDecimal getBigDecimal(String columnLabel) throws SQLException {
+        return null;
     }
 
     @Override
-    public void updateNClob(int columnIndex, Reader reader) throws SQLException {
-        resultSet.updateNClob(getMappedColumn(columnIndex), reader);
+    public boolean isBeforeFirst() throws SQLException {
+        return false;
     }
 
     @Override
-    public void updateNClob(String columnLabel, Reader reader) throws SQLException {
-        resultSet.updateNClob(columnLabel, reader);
+    public boolean isAfterLast() throws SQLException {
+        return false;
     }
 
     @Override
     public <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
-        return resultSet.getObject(getMappedColumn(columnIndex), type);
+        if (closeFlag) throw new SQLException();
+        if (type == null) throw new SQLException();
+        if (curPosition == -1) throw new SQLException();
+
+        String key = qr.getColumnMetaData().get(columnIndex - 1).getColumnName();
+        Object result = qr.getRows().get(curPosition).get(key);
+
+        try {
+            return type.cast(result);
+        }
+        catch (Exception e) {
+            throw new SQLException();
+        }
     }
 
     @Override
     public <T> T getObject(String columnLabel, Class<T> type) throws SQLException {
-        return resultSet.getObject(columnLabel, type);
+        if (closeFlag) throw new SQLException();
+        if (type == null) throw new SQLException();
+        if (curPosition == -1) throw new SQLException();
+
+        Object result = qr.getRows().get(curPosition).get(columnLabel);
+
+        T tmp;
+        try {
+            tmp = (T)result;
+        }
+        catch (Exception e) {
+            throw new SQLException();
+        }
+        return tmp;
     }
 
+    @Override
+    public int getRow() throws SQLException {
+        if (closeFlag) throw new SQLException();
+        return curPosition + 1;
+    }
+
+    @Override
+    public boolean absolute(int row) throws SQLException {
+        return false;
+    }
+
+    @Override
+    public boolean relative(int rows) throws SQLException {
+        return false;
+    }
+
+    @Override
+    public Statement getStatement() throws SQLException {
+        if (closeFlag) throw new SQLException();
+        return null;
+    }
+
+    @Override
+    public Object getObject(int columnIndex, Map<String, Class<?>> map) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Ref getRef(int columnIndex) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Blob getBlob(int columnIndex) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Clob getClob(int columnIndex) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Array getArray(int columnIndex) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Object getObject(String columnLabel, Map<String, Class<?>> map) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Ref getRef(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Blob getBlob(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Clob getClob(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Array getArray(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Date getDate(int columnIndex, Calendar cal) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Date getDate(String columnLabel, Calendar cal) throws SQLException {
+        return null;
+    }
+
+
+    @Override
+    public String getString(int columnIndex) throws SQLException {
+//        return String.valueOf(getObject(columnIndex, String.class));
+        return String.valueOf(getObject(columnIndex, Long.class));
+    }
+
+    @Override
+    public String getString(String columnLabel) throws SQLException {
+        return String.valueOf(getObject(columnLabel, Long.class));
+    }
+
+    @Override
+    public java.sql.Time getTime(int columnIndex, Calendar cal) throws SQLException {
+        return getObject(columnIndex, java.sql.Time.class);
+    }
+
+    @Override
+    public java.sql.Time getTime(String columnLabel, Calendar cal) throws SQLException {
+        return getObject(columnLabel, java.sql.Time.class);
+    }
+
+    @Override
+    public java.sql.Timestamp getTimestamp(int columnIndex, Calendar cal)
+            throws SQLException {
+        return getObject(columnIndex, java.sql.Timestamp.class);
+    }
+
+    public java.sql.Timestamp getTimestamp(String columnLabel, Calendar cal)
+            throws SQLException {
+        return getObject(columnLabel, java.sql.Timestamp.class);
+    }
+
+    @Override
+    public URL getURL(int columnIndex) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public URL getURL(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public void updateRef(int columnIndex, Ref x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateRef(String columnLabel, Ref x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBlob(int columnIndex, Blob x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBlob(String columnLabel, Blob x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateClob(int columnIndex, Clob x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateClob(String columnLabel, Clob x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateArray(int columnIndex, Array x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateArray(String columnLabel, Array x) throws SQLException {
+
+    }
+
+    @Override
+    public RowId getRowId(int columnIndex) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public RowId getRowId(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public void updateRowId(int columnIndex, RowId x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateRowId(String columnLabel, RowId x) throws SQLException {
+
+    }
+
+    @Override
+    public int getHoldability() throws SQLException {
+        return 0;
+    }
+
+    // unclear what to gives out
+    @Override
+    public int getType() throws SQLException {
+        return 2;
+    }
+
+    @Override
+    public int getConcurrency() throws SQLException {
+        return 0;
+    }
+
+    @Override
+    public boolean rowUpdated() throws SQLException {
+        return false;
+    }
+
+    @Override
+    public boolean rowInserted() throws SQLException {
+        return false;
+    }
+
+    @Override
+    public boolean rowDeleted() throws SQLException {
+        return false;
+    }
+
+    @Override
+    public void updateNull(int columnIndex) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBoolean(int columnIndex, boolean x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateByte(int columnIndex, byte x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateShort(int columnIndex, short x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateInt(int columnIndex, int x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateLong(int columnIndex, long x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateFloat(int columnIndex, float x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateDouble(int columnIndex, double x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBigDecimal(int columnIndex, BigDecimal x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateString(int columnIndex, String x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBytes(int columnIndex, byte[] x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateDate(int columnIndex, Date x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateTime(int columnIndex, Time x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateTimestamp(int columnIndex, Timestamp x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateAsciiStream(int columnIndex, InputStream x, int length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBinaryStream(int columnIndex, InputStream x, int length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateCharacterStream(int columnIndex, Reader x, int length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateObject(int columnIndex, Object x, int scaleOrLength) throws SQLException {
+
+    }
+
+    @Override
+    public void updateObject(int columnIndex, Object x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateNull(String columnLabel) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBoolean(String columnLabel, boolean x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateByte(String columnLabel, byte x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateShort(String columnLabel, short x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateInt(String columnLabel, int x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateLong(String columnLabel, long x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateFloat(String columnLabel, float x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateDouble(String columnLabel, double x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBigDecimal(String columnLabel, BigDecimal x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateString(String columnLabel, String x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBytes(String columnLabel, byte[] x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateDate(String columnLabel, Date x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateTime(String columnLabel, Time x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateTimestamp(String columnLabel, Timestamp x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateAsciiStream(String columnLabel, InputStream x, int length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBinaryStream(String columnLabel, InputStream x, int length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateCharacterStream(String columnLabel, Reader reader, int length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateObject(String columnLabel, Object x, int scaleOrLength) throws SQLException {
+
+    }
+
+    @Override
+    public void updateObject(String columnLabel, Object x) throws SQLException {
+
+    }
+
+    @Override
+    public void insertRow() throws SQLException {
+
+    }
+
+    @Override
+    public void updateRow() throws SQLException {
+
+    }
+
+    @Override
+    public void deleteRow() throws SQLException {
+
+    }
+
+    @Override
+    public void refreshRow() throws SQLException {
+
+    }
+
+    @Override
+    public void cancelRowUpdates() throws SQLException {
+
+    }
+
+    @Override
+    public void moveToInsertRow() throws SQLException {
+
+    }
+
+    @Override
+    public void moveToCurrentRow() throws SQLException {
+
+    }
+
+    @Override
+    public boolean isClosed() throws SQLException {
+        return closeFlag;
+    }
+
+    @Override
+    public void updateNString(int columnIndex, String nString) throws SQLException {
+
+    }
+
+    @Override
+    public void updateNString(String columnLabel, String nString) throws SQLException {
+
+    }
+
+
+    @Override
+    public boolean isFirst() throws SQLException {
+        if (closeFlag) throw new SQLException();
+        return curPosition == 0;
+    }
+
+    @Override
+    public boolean isLast() throws SQLException {
+        if (closeFlag) throw new SQLException();
+        return curPosition == qr.getRows().size() - 1;
+    }
+
+    @Override
+    public void beforeFirst() throws SQLException {
+
+    }
+
+    @Override
+    public void afterLast() throws SQLException {
+
+    }
+
+    @Override
+    public boolean last() throws SQLException {
+        if (closeFlag) throw new SQLException();
+        try {
+            if (qr.getRows().size() == 0) return false;
+            curPosition = qr.getRows().size() - 1;
+            return true;
+        }
+        catch (Exception e) {
+            throw new SQLException();
+        }
+    }
+
+    public boolean previous() throws SQLException {
+        if (closeFlag) throw new SQLException();
+        if (curPosition == -1) return false;
+        if (curPosition == 0) return false;
+        curPosition--;
+        return true;
+    }
+
+    @Override
+    public void setFetchDirection(int direction) throws SQLException {
+
+    }
+
+    @Override
+    public int getFetchDirection() throws SQLException {
+        return 0;
+    }
+
+    @Override
+    public void setFetchSize(int rows) throws SQLException {
+
+    }
+
+    @Override
+    public int getFetchSize() throws SQLException {
+        return 0;
+    }
+
+    // not sure what it's doing
+    public boolean wasNull() throws SQLException {
+        return true;
+    }
+
+    public byte getByte(int columnIndex) throws SQLException {
+        return getObject(columnIndex, byte.class);
+    }
+
+    public byte[] getBytes(int columnIndex) throws SQLException {
+        return getObject(columnIndex, byte[].class);
+    }
+
+    public void updateNClob(int columnIndex, NClob nClob) throws SQLException {
+        // deprecated in verdictResultSet
+    }
+
+    public void updateNClob(String columnLabel, NClob nClob) throws SQLException {
+        // deprecated in verdictResultSet
+    }
+
+    public void updateNClob(int columnIndex, Reader reader, long length) throws SQLException {
+        // deprecated in verdictResultSet
+    }
+
+    public void updateNClob(String columnLabel,  Reader reader, long length) throws SQLException {
+        // deprecated in verdictResultSet
+    }
+
+    public void updateNClob(int columnIndex,  Reader reader) throws SQLException {
+        // deprecated in verdictResultSet
+    }
+
+    public void updateNClob(String columnLabel,  Reader reader) throws SQLException {
+        // deprecated in verdictResultSet
+    }
+
+    public NClob getNClob(int columnIndex) throws SQLException {
+        // deprecated in verdictResultSet
+        return null;
+    }
+
+    @Override
+    public NClob getNClob(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    public SQLXML getSQLXML(int columnIndex) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public SQLXML getSQLXML(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public void updateSQLXML(int columnIndex, SQLXML xmlObject) throws SQLException {
+
+    }
+
+    @Override
+    public void updateSQLXML(String columnLabel, SQLXML xmlObject) throws SQLException {
+
+    }
+
+    @Override
+    public String getNString(int columnIndex) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public String getNString(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Reader getNCharacterStream(int columnIndex) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public Reader getNCharacterStream(String columnLabel) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public void updateNCharacterStream(int columnIndex, Reader x, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateNCharacterStream(String columnLabel, Reader reader, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateAsciiStream(int columnIndex, InputStream x, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBinaryStream(int columnIndex, InputStream x, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateCharacterStream(int columnIndex, Reader x, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateAsciiStream(String columnLabel, InputStream x, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBinaryStream(String columnLabel, InputStream x, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateCharacterStream(String columnLabel, Reader reader, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBlob(int columnIndex, InputStream inputStream, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBlob(String columnLabel, InputStream inputStream, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateClob(int columnIndex, Reader reader, long length) throws SQLException {
+
+    }
+
+    @Override
+    public void updateClob(String columnLabel, Reader reader, long length) throws SQLException {
+
+    }
+
+
+    public void updateNCharacterStream(int columnIndex,
+                                       java.io.Reader x) throws SQLException {
+        // deprecated in verdictResultSet
+    }
+
+    public void updateNCharacterStream(String columnLabel,
+                                       java.io.Reader reader) throws SQLException {
+        // deprecated in verdictResultSet
+    }
+
+    @Override
+    public void updateAsciiStream(int columnIndex, InputStream x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBinaryStream(int columnIndex, InputStream x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateCharacterStream(int columnIndex, Reader x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateAsciiStream(String columnLabel, InputStream x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBinaryStream(String columnLabel, InputStream x) throws SQLException {
+
+    }
+
+    @Override
+    public void updateCharacterStream(String columnLabel, Reader reader) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBlob(int columnIndex, InputStream inputStream) throws SQLException {
+
+    }
+
+    @Override
+    public void updateBlob(String columnLabel, InputStream inputStream) throws SQLException {
+
+    }
+
+    @Override
+    public void updateClob(int columnIndex, Reader reader) throws SQLException {
+
+    }
+
+    @Override
+    public void updateClob(String columnLabel, Reader reader) throws SQLException {
+
+    }
+
+
+    @Override
+    public <T> T unwrap(Class<T> iface) throws SQLException {
+        return null;
+    }
+
+    @Override
+    public boolean isWrapperFor(Class<?> iface) throws SQLException {
+        return false;
+    }
 }

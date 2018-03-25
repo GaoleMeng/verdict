@@ -125,6 +125,8 @@ public class ApproxAggregatedRelation extends ApproxRelation {
 
             if (!elem.isagg()) {
                 // skip the partition number
+
+
                 if (elem.aliasPresent() && elem.getAlias().equals(partitionColumnName())) {
                     continue;
                 }
@@ -145,6 +147,7 @@ public class ApproxAggregatedRelation extends ApproxRelation {
                 }
                 newGroupby.add(newExpr);
             } else {
+
                 // skip the partition size column
                 if (elem.getAlias().equals(partitionSizeAlias)) {
                     continue;
@@ -192,6 +195,11 @@ public class ApproxAggregatedRelation extends ApproxRelation {
                 }
             }
         }
+
+        // add an extra column showing the aggregate counter
+        String counter_obj = new String("count(*)");
+        newElems.add(new SelectElem(vc, new ConstantExpr(vc, counter_obj),"_verdict_group_count"));
+
 
         // this extra aggregation stage should be grouped by non-agg elements except for
         // __vpart
