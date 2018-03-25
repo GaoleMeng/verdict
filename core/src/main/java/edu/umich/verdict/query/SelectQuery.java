@@ -16,6 +16,7 @@
 
 package edu.umich.verdict.query;
 
+import java.sql.SQLException;
 import edu.umich.verdict.VerdictContext;
 import edu.umich.verdict.exceptions.VerdictException;
 import edu.umich.verdict.parser.VerdictSQLBaseVisitor;

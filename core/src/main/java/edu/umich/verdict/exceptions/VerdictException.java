@@ -29,4 +29,6 @@ public class VerdictException extends java.lang.Exception {
     public VerdictException(Exception e) {
         this(StackTraceReader.stackTrace2String(e));
     }
+
+    public VerdictException () { super(); }
 }

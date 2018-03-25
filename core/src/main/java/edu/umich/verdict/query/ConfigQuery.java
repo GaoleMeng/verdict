@@ -22,7 +22,7 @@ import java.util.List;
 import org.apache.commons.lang3.tuple.Pair;
 
 import edu.umich.verdict.VerdictContext;
-import edu.umich.verdict.datatypes.VerdictResultSet;
+import edu.umich.verdict.datatypes.VerdictResultSetOrg;
 import edu.umich.verdict.exceptions.VerdictException;
 import edu.umich.verdict.parser.VerdictSQLBaseVisitor;
 import edu.umich.verdict.parser.VerdictSQLParser;
@@ -108,7 +108,7 @@ public class ConfigQuery extends SelectQuery {
                 meta.add("conf_value");
 //                vc.getDbms().execute("select 1");
 
-                rs = VerdictResultSet.fromList(data, meta);
+                rs = VerdictResultSetOrg.fromList(data, meta);
             } else if (vc.getDbms().isSpark()) {
                 VerdictLogger.warn(this, "DataFrame is not generated for Spark yet. The key-value pair is " + getKey()
                         + ": " + getValue());

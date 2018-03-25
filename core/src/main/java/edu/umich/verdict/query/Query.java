@@ -17,8 +17,10 @@
 package edu.umich.verdict.query;
 
 import java.sql.ResultSet;
+import java.sql.SQLException;
 
 //import org.apache.spark.sql.DataFrame;
+import edu.umich.verdict.datatypes.VerdictResultSet;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
@@ -73,10 +75,34 @@ public abstract class Query {
         // vc.getMeta().clearSampleInfo();
         Alias.resetAliasIndex();
     }
+
     
     protected void setResultsFromRelation(Relation r) throws VerdictException {
         if (vc.getDbms().isJDBC()) {
-            rs = r.collectResultSet();
+            ResultSet tmp = r.collectResultSet();
+            try {
+                VerdictResultSet vrs = new VerdictResultSet(tmp);
+                vrs.checkAndRevise(1000000000);
+                vrs.deleteColumn("_verdict_group_count");
+                rs = vrs;
+            }
+            catch (Exception e) {
+                throw new VerdictException();
+            }
+
+//            try {
+//                while (rs.next()) {
+//                    System.out.println("ff");
+//                }
+//                rs.refreshRow();
+//                rs.beforeFirst();
+//                System.out.println("finish");
+//            }
+//            catch (SQLException e) {
+//                throw new VerdictException();
+//            }
+
+
 //        } else if (vc.getDbms().isSpark()) {
 //            df = r.collectDataFrame();
         } else if (vc.getDbms().isSpark2()) {
