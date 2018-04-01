@@ -22,7 +22,7 @@ public class VerdictJdbc {
 
         while (rs.next()) {
 //            int tmp = rs.getInt(3);
-            System.out.println(rs.getString(1));
+            System.out.println(rs.getInt(1));
             System.out.println(rs.getString(2));
 //            System.out.println(rs.getString(3));
 //            System.out.println(rs.getn);

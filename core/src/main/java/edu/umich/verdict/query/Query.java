@@ -20,6 +20,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 
 //import org.apache.spark.sql.DataFrame;
+import edu.umich.verdict.VerdictConf;
 import edu.umich.verdict.datatypes.VerdictResultSet;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
@@ -82,7 +83,7 @@ public abstract class Query {
             ResultSet tmp = r.collectResultSet();
             try {
                 VerdictResultSet vrs = new VerdictResultSet(tmp);
-                vrs.checkAndRevise(10000);
+                vrs.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (float) 0.05);
                 vrs.deleteColumn("_verdict_group_count");
                 rs = vrs;
             }
