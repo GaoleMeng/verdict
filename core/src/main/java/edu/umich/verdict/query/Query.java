@@ -82,7 +82,7 @@ public abstract class Query {
             ResultSet tmp = r.collectResultSet();
             try {
                 VerdictResultSet vrs = new VerdictResultSet(tmp);
-                vrs.checkAndRevise(1000000000);
+                vrs.checkAndRevise(10000);
                 vrs.deleteColumn("_verdict_group_count");
                 rs = vrs;
             }
@@ -107,6 +107,7 @@ public abstract class Query {
 //            df = r.collectDataFrame();
         } else if (vc.getDbms().isSpark2()) {
             ds = r.collectDataset();
+
         }
     }
 
