@@ -188,6 +188,8 @@ public class VerdictConf {
 
     public int getMinimumGroupSize() { return Integer.parseInt(get("verdict.error_bound.minimum_subsample_size")); }
 
+    public float getTrustErrorBound() { return Float.parseFloat(get("verdict.error_bound.trust_error_bound")); }
+
     public String getDbmsSchema() {
         return get("verdict.jdbc.schema");
     }

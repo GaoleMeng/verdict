@@ -123,8 +123,9 @@ public class VerdictResultSet implements ResultSet {
 //                    Long tmp = (Long) rows.get(j).get("_verdict_group_count");
                     if (threshold >= (Long) rows.get(j).get("_verdict_group_count"))
                         rows.get(j).put(metaData.get(i).getColumnName(), new Long(-1));
-                    else if ((float)rows.get(j).get(metaData.get(i).getColumnName()) >
-                            trust_bound * (float)rows.get(j).get(metaData.get(i - 1).getColumnName())) {
+                    else if (Float.parseFloat(rows.get(j).get(metaData.get(i).getColumnName()).toString()) >
+                            trust_bound *
+                                    Float.parseFloat(rows.get(j).get(metaData.get(i - 1).getColumnName()).toString())) {
                         rows.get(j).put(metaData.get(i).getColumnName(), new Long(-1));
                     }
                 }
@@ -296,43 +297,44 @@ public class VerdictResultSet implements ResultSet {
 
     @Override
     public float getFloat(int columnIndex) throws SQLException {
-        return getObject(columnIndex, Long.class).floatValue();
+        return Float.parseFloat(getObject(columnIndex, String.class));
     }
 
     @Override
     public float getFloat(String columnLabel) throws SQLException {
-        return getObject(columnLabel, Long.class).floatValue();
+        return Float.parseFloat(getObject(columnLabel, String.class));
     }
 
 
     @Override
     public int getInt(int columnIndex) throws SQLException {
-        return Integer.valueOf(getObject(columnIndex, String.class));
+        return (int) Float.parseFloat(getObject(columnIndex, String.class));
     }
 
     @Override
     public int getInt(String columnLabel) throws SQLException {
-        return Integer.valueOf(getObject(columnLabel, String.class));
+        return (int) Float.parseFloat(getObject(columnLabel, String.class));
     }
 
     @Override
     public long getLong(int columnIndex) throws SQLException {
-        return Long.valueOf(getObject(columnIndex, String.class));
+//        System.out.println(getObject(columnIndex, String.class));
+        return (long) Float.parseFloat(getObject(columnIndex, String.class));
     }
 
     @Override
     public long getLong(String columnLabel) throws SQLException {
-        return Long.valueOf(getObject(columnLabel, String.class));
+        return (long) Float.parseFloat(getObject(columnLabel, String.class));
     }
 
     @Override
     public short getShort(int columnIndex) throws SQLException {
-        return Short.valueOf(getObject(columnIndex, String.class));
+        return (short) Float.parseFloat(getObject(columnIndex, String.class));
     }
 
     @Override
     public short getShort(String columnLabel) throws SQLException {
-        return Short.valueOf(getObject(columnLabel, String.class));
+        return (short) Float.parseFloat(getObject(columnLabel, String.class));
     }
 
     @Override

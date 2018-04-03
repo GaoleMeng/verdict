@@ -83,7 +83,7 @@ public abstract class Query {
             ResultSet tmp = r.collectResultSet();
             try {
                 VerdictResultSet vrs = new VerdictResultSet(tmp);
-                vrs.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (float) 0.05);
+                vrs.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (new VerdictConf()).getTrustErrorBound());
                 vrs.deleteColumn("_verdict_group_count");
                 rs = vrs;
             }

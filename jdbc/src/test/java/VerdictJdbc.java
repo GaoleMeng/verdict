@@ -24,6 +24,11 @@ public class VerdictJdbc {
 //            int tmp = rs.getInt(3);
             System.out.println(rs.getInt(1));
             System.out.println(rs.getString(2));
+            System.out.println(rs.getInt(2));
+            System.out.println(rs.getLong(2));
+            System.out.println(rs.getFloat(2));
+            System.out.println(rs.getObject(2));
+            System.out.println(rs.getShort(2));
 //            System.out.println(rs.getString(3));
 //            System.out.println(rs.getn);
 //            System.out.println(rs.getString(3));
