@@ -97,7 +97,7 @@ public class VerdictResultSet implements ResultSet {
 
     // check the group count column, if the group count is smaller than threshold
     // we change the error bound to inf,
-    public void checkAndRevise(int threshold) throws SQLException {
+    public void checkAndRevise(int threshold, float trust_bound) throws SQLException {
         if (closeFlag) throw new SQLException();
 
         ArrayList<ColumnMetaData> metaData = qr.getColumnMetaData();
@@ -123,6 +123,11 @@ public class VerdictResultSet implements ResultSet {
 //                    Long tmp = (Long) rows.get(j).get("_verdict_group_count");
                     if (threshold >= (Long) rows.get(j).get("_verdict_group_count"))
                         rows.get(j).put(metaData.get(i).getColumnName(), new Long(-1));
+                    else if (Float.parseFloat(rows.get(j).get(metaData.get(i).getColumnName()).toString()) >
+                            trust_bound *
+                                    Float.parseFloat(rows.get(j).get(metaData.get(i - 1).getColumnName()).toString())) {
+                        rows.get(j).put(metaData.get(i).getColumnName(), new Long(-1));
+                    }
                 }
             }
         }
@@ -292,43 +297,44 @@ public class VerdictResultSet implements ResultSet {
 
     @Override
     public float getFloat(int columnIndex) throws SQLException {
-        return getObject(columnIndex, Long.class).floatValue();
+        return Float.parseFloat(getObject(columnIndex, String.class));
     }
 
     @Override
     public float getFloat(String columnLabel) throws SQLException {
-        return getObject(columnLabel, Long.class).floatValue();
+        return Float.parseFloat(getObject(columnLabel, String.class));
     }
 
 
     @Override
     public int getInt(int columnIndex) throws SQLException {
-        return getObject(columnIndex, Long.class).intValue();
+        return (int) Float.parseFloat(getObject(columnIndex, String.class));
     }
 
     @Override
     public int getInt(String columnLabel) throws SQLException {
-        return getObject(columnLabel, Long.class).intValue();
+        return (int) Float.parseFloat(getObject(columnLabel, String.class));
     }
 
     @Override
     public long getLong(int columnIndex) throws SQLException {
-        return getObject(columnIndex, Long.class);
+//        System.out.println(getObject(columnIndex, String.class));
+        return (long) Float.parseFloat(getObject(columnIndex, String.class));
     }
 
     @Override
     public long getLong(String columnLabel) throws SQLException {
-        return getObject(columnLabel, Long.class);
+        return (long) Float.parseFloat(getObject(columnLabel, String.class));
     }
 
     @Override
     public short getShort(int columnIndex) throws SQLException {
-        return getObject(columnIndex, Long.class).shortValue();
+        return (short) Float.parseFloat(getObject(columnIndex, String.class));
     }
 
     @Override
     public short getShort(String columnLabel) throws SQLException {
-        return getObject(columnLabel, Long.class).shortValue();
+        return (short) Float.parseFloat(getObject(columnLabel, String.class));
     }
 
     @Override
@@ -399,7 +405,7 @@ public class VerdictResultSet implements ResultSet {
         Object result = qr.getRows().get(curPosition).get(key);
 
         try {
-            return type.cast(result);
+            return (T) result.toString();
         }
         catch (Exception e) {
             throw new SQLException();
@@ -510,12 +516,12 @@ public class VerdictResultSet implements ResultSet {
     @Override
     public String getString(int columnIndex) throws SQLException {
 //        return String.valueOf(getObject(columnIndex, String.class));
-        return String.valueOf(getObject(columnIndex, Long.class));
+        return String.valueOf(getObject(columnIndex, String.class));
     }
 
     @Override
     public String getString(String columnLabel) throws SQLException {
-        return String.valueOf(getObject(columnLabel, Long.class));
+        return String.valueOf(getObject(columnLabel, String.class));
     }
 
     @Override
