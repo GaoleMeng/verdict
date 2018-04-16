@@ -66,6 +66,11 @@ public class VerdictResultSet implements ResultSet {
         this.curPosition = -1;
     }
 
+
+    public QueryResult getQueryResult() {
+        return qr;
+    }
+
     public void deleteColumn(String columnLabel) throws SQLException {
         if (closeFlag) throw new SQLException();
         try {
@@ -103,11 +108,18 @@ public class VerdictResultSet implements ResultSet {
         ArrayList<ColumnMetaData> metaData = qr.getColumnMetaData();
         int columnNums = metaData.size();
         boolean check_exists = false;
+        int which = 0;
         for (int i = 0; i < columnNums; i++) {
-            if (metaData.get(i).getColumnName().equals("_verdict_group_count")) {
+            if (metaData.get(i).getColumnName().equals("VERDICT_GROUP_COUNT")) {
                 check_exists = true;
+                which = 0;
                 break;
             }
+            else if (metaData.get(i).getColumnName().equals("verdict_group_count")) {
+                which = 1;
+                check_exists = true;
+            }
+
         }
 
         if (!check_exists) {
@@ -116,17 +128,29 @@ public class VerdictResultSet implements ResultSet {
 
         // group count column exists, check every row of the verdictResultSet
         ArrayList<HashMap<String, Object>> rows = qr.getRows();
+        String true_string_group_count = "";
+        if (which == 1) {
+            true_string_group_count = "verdict_group_count";
+        }
+        else {
+            true_string_group_count = "VERDICT_GROUP_COUNT";
+        }
+
+
         for (int i = 1; i < columnNums; i++) {
             if (metaData.get(i).getColumnName().endsWith("_err") &&
-                    metaData.get(i - 1).getColumnName().concat("_err").equals(metaData.get(i).getColumnName())) {
+                    metaData.get(i - 1).getColumnName().concat("_err").equals(metaData.get(i).getColumnName())
+                    || metaData.get(i).getColumnName().endsWith("_ERR") &&
+                    metaData.get(i - 1).getColumnName().concat("_ERR").equals(metaData.get(i).getColumnName())) {
+
                 for (int j = 0; j < rows.size(); j++) {
 //                    Long tmp = (Long) rows.get(j).get("_verdict_group_count");
-                    if (threshold >= (Long) rows.get(j).get("_verdict_group_count"))
-                        rows.get(j).put(metaData.get(i).getColumnName(), new Long(-1));
+                    if (threshold >= (int) rows.get(j).get(true_string_group_count))
+                        rows.get(j).put(metaData.get(i).getColumnName(), new Double(-1));
                     else if (Float.parseFloat(rows.get(j).get(metaData.get(i).getColumnName()).toString()) >
                             trust_bound *
                                     Float.parseFloat(rows.get(j).get(metaData.get(i - 1).getColumnName()).toString())) {
-                        rows.get(j).put(metaData.get(i).getColumnName(), new Long(-1));
+                        rows.get(j).put(metaData.get(i).getColumnName(), new Double(-1));
                     }
                 }
             }
@@ -272,7 +296,7 @@ public class VerdictResultSet implements ResultSet {
 
     @Override
     public double getDouble(int columnIndex) throws SQLException {
-        return getObject(columnIndex, Long.class).doubleValue();
+        return Double.parseDouble(getObject(columnIndex, String.class));
     }
 
     @Override
@@ -282,7 +306,7 @@ public class VerdictResultSet implements ResultSet {
 
     @Override
     public double getDouble(String columnLabel) throws SQLException {
-        return getObject(columnLabel, Long.class).doubleValue();
+        return Double.parseDouble(getObject(columnLabel, String.class));
     }
 
     @Override

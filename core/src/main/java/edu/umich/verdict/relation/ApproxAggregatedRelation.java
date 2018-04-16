@@ -198,7 +198,7 @@ public class ApproxAggregatedRelation extends ApproxRelation {
 
         // add an extra column showing the aggregate counter
         String counter_obj = new String("count(*)");
-        newElems.add(new SelectElem(vc, new ConstantExpr(vc, counter_obj),"_verdict_group_count"));
+        newElems.add(new SelectElem(vc, new ConstantExpr(vc, counter_obj),"verdict_group_count"));
 
 
         // this extra aggregation stage should be grouped by non-agg elements except for
