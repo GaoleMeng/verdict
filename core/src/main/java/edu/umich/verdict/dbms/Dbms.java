@@ -61,6 +61,8 @@ public abstract class Dbms {
 
     protected static String randNumColname = "verdict_rand";
 
+    protected static final String HASH_DELIM = ";";
+
     public VerdictContext getVc() {
         return vc;
     }
@@ -79,7 +81,7 @@ public abstract class Dbms {
 
     /**
      * Copy constructor for not sharing the underlying statement.
-     * 
+     *
      * @param another
      */
     public Dbms(Dbms another) {
@@ -185,13 +187,13 @@ public abstract class Dbms {
         String sql = String.format("create database if not exists %s", catalog);
         executeUpdate(sql);
     }
-    
+
     public void dropTable(TableUniqueName tableName) throws VerdictException {
         dropTable(tableName, true);
     }
 
     /**
-     * 
+     *
      * @param tableName
      * @param check When set to true, issues "drop" statement only when the cached metadata contains the table.
      * @throws VerdictException
@@ -207,7 +209,7 @@ public abstract class Dbms {
                             tableName.getSchemaName()));
             return;
         }
-        
+
         // This check is useful for Spark 1.6, since it throws an error even though "if exists" is used
         // in the "drop table" statement.
         Set<String> tables = vc.getMeta().getTables(tableName.getDatabaseName());
@@ -256,7 +258,7 @@ public abstract class Dbms {
 
     /**
      * Retrieves the mapping from column name to its type for a given table.
-     * 
+     *
      * @param table
      * @return
      * @throws VerdictException
@@ -304,7 +306,7 @@ public abstract class Dbms {
         TableUniqueName temp = createUniformRandomSampledTable(param);
         long sampleTableSize = attachUniformProbabilityToTempTable(param, temp);
         dropTable(temp, false);
-        
+
         long originalTableSize = vc.getMeta().getTableSize(param.getOriginalTable());
         return Pair.of(sampleTableSize, originalTableSize);
     }
@@ -352,16 +354,16 @@ public abstract class Dbms {
                                 .getSampleSizeOf(
                                  new SampleParam(vc, param.getOriginalTable(), "uniform", null, new ArrayList<String>()));
         if (info == null) {
-            String msg = "A uniform random must first be created before creating a stratified sample.";
-            VerdictLogger.error(this, msg);
-            throw new VerdictException(msg);
+            String msg = "A uniform sample is not available. It must be created before creating a stratified sample.";
+            VerdictLogger.info(this, msg);
+            return null;
         }
 
         dropTable(param.sampleTableName());
         TableUniqueName groupSizeTemp = createGroupSizeTempTable(param);
         createStratifiedSampleFromGroupSizeTemp(param, groupSizeTemp);
         dropTable(groupSizeTemp, false);
-        
+
         long sampleTableSize = getTableSize(param.sampleTableName());
         long originalTableSize = vc.getMeta().getTableSize(param.getOriginalTable());
 
@@ -436,12 +438,12 @@ public abstract class Dbms {
                 joinExprs.add(Pair.of(left, right));
             } else {
                 Expr left = Expr.from(vc,
-                        String.format("case when s.%s%s%s is null then %d else s.%s%s%s end", 
+                        String.format("case when s.%s%s%s is null then %d else s.%s%s%s end",
                                 getQuoteString(), col, getQuoteString(),
                                 NULL_LONG,
                                 getQuoteString(), col, getQuoteString()));
                 Expr right = Expr.from(vc,
-                        String.format("case when t.%s%s%s is null then %d else t.%s%s%s end", 
+                        String.format("case when t.%s%s%s is null then %d else t.%s%s%s end",
                                 getQuoteString(), col, getQuoteString(),
                                 NULL_LONG,
                                 getQuoteString(), col, getQuoteString()));
@@ -522,7 +524,7 @@ public abstract class Dbms {
     protected TableUniqueName createUniverseSampledTable(SampleParam param) throws VerdictException {
         TableUniqueName temp = Relation.getTempTableName(vc, param.sampleTableName().getSchemaName());
         ExactRelation sampled = SingleRelation.from(vc, param.getOriginalTable())
-                .where(universeSampleSamplingCondition(param.getColumnNames().get(0), param.getSamplingRatio()));
+                .where(universeSampleSamplingCondition(param.getColumnNames(), param.getSamplingRatio()));
         dropTable(temp);
         String sql = String.format("create table %s AS %s", temp, sampled.toSql());
 //        VerdictLogger.debug(this, "The query used for creating a universe sample without sampling probability:");
@@ -532,7 +534,7 @@ public abstract class Dbms {
     }
 
     /**
-     * 
+     *
      * @param param
      * @param temp
      * @return The sample size
@@ -547,8 +549,8 @@ public abstract class Dbms {
 
         ExactRelation withProb = sampled
                                  .select(String.format("*, %d / %d AS %s", sample_size, total_size, samplingProbCol) + ", "
-                                         + universePartitionColumn(param.getColumnNames().get(0)));
-        
+                                         + universePartitionColumn(param.getColumnNames()));
+
         String parquetString = "";
         if (vc.getConf().areSamplesStoredAsParquet()) {
             parquetString = getParquetString();
@@ -648,7 +650,7 @@ public abstract class Dbms {
 
     /**
      * Column expression that generates a number between 0 and 99.
-     * 
+     *
      * @return
      */
     protected abstract String randomPartitionColumn();
@@ -657,11 +659,15 @@ public abstract class Dbms {
         return modOfHash(colName, 1000000) + String.format(" < %.2f", samplingRatio * 1000000);
     }
 
+    protected String universeSampleSamplingCondition(List<String> columns, double samplingRatio) {
+        return modOfHash(columns, 1000000) + String.format(" < %.2f", samplingRatio * 1000000);
+    }
+
     /**
      * Column expression that generates a number between 0 and 99. The tuples with
      * the same attribute values on which a universe sample is created are assigned
      * the same partition number.
-     * 
+     *
      * @return
      */
     protected String universePartitionColumn(String colName) {
@@ -669,13 +675,26 @@ public abstract class Dbms {
     }
 
     /**
+     * Column expression that generates a number between 0 and 99. The tuples with
+     * the same attribute values on which a universe sample is created are assigned
+     * the same partition number.
+     *
+     * @return
+     */
+    protected String universePartitionColumn(List<String> columns) {
+        return modOfHash(columns, 100) + " as " + partitionColumnName();
+    }
+
+    /**
      * Column expression that generates a number between 0 and 1.
-     * 
+     *
      * @return
      */
     protected abstract String randomNumberExpression(SampleParam param);
 
     public abstract String modOfHash(String col, int mod);
+
+    public abstract String modOfHash(List<String> columns, int mod);
 
     protected abstract String modOfRand(int mod);
 

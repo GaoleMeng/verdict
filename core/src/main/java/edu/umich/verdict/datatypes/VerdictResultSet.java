@@ -5,6 +5,10 @@ import edu.umich.verdict.datatypes.QueryResult;
 import edu.umich.verdict.datatypes.ColumnMetaData;
 import edu.umich.verdict.parser.VerdictSQLParser;
 
+
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
+
 import java.io.InputStream;
 import java.io.Reader;
 import java.math.BigDecimal;
@@ -102,8 +106,9 @@ public class VerdictResultSet implements ResultSet {
 
     // check the group count column, if the group count is smaller than threshold
     // we change the error bound to inf,
-    public void checkAndRevise(int threshold, float trust_bound) throws SQLException {
+    public boolean checkAndRevise(int threshold, float trust_bound) throws SQLException {
         if (closeFlag) throw new SQLException();
+        boolean res = false;
 
         ArrayList<ColumnMetaData> metaData = qr.getColumnMetaData();
         int columnNums = metaData.size();
@@ -145,18 +150,22 @@ public class VerdictResultSet implements ResultSet {
 
                 for (int j = 0; j < rows.size(); j++) {
 //                    Long tmp = (Long) rows.get(j).get("_verdict_group_count");
-                    if (threshold >= (int) rows.get(j).get(true_string_group_count))
-                        rows.get(j).put(metaData.get(i).getColumnName(), new Double(-1));
+                    if (threshold >= (Long) rows.get(j).get("_verdict_group_count")) {
+                        rows.get(j).put(metaData.get(i).getColumnName(), new Long(-1));
+                        res = true;
+                    }
                     else if (Float.parseFloat(rows.get(j).get(metaData.get(i).getColumnName()).toString()) >
                             trust_bound *
                                     Float.parseFloat(rows.get(j).get(metaData.get(i - 1).getColumnName()).toString())) {
-                        rows.get(j).put(metaData.get(i).getColumnName(), new Double(-1));
+                        rows.get(j).put(metaData.get(i).getColumnName(), new Long(-1));
+                        res = true;
                     }
                 }
             }
         }
         qr.setRows(rows);
         qr.setColumnMetaData(metaData);
+        return res;
     }
 
     @Override

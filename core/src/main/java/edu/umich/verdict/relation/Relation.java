@@ -168,6 +168,15 @@ public abstract class Relation {
         return rs;
     }
 
+    public ResultSet recollectResultSet(String original) throws VerdictException{
+        VerdictLogger.debug(this,"reissue "+original);
+        ResultSet rs = vc.getDbms().executeJdbcQuery(original);
+        return rs;
+    }
+
+
+
+
 //    public DataFrame collectDataFrame() throws VerdictException {
 //        String sql = toSql();
 //        VerdictLogger.debug(this, "A query to db: " + sql);
@@ -185,6 +194,16 @@ public abstract class Relation {
         Dataset<Row> ds = vc.getDbms().executeSpark2Query(sql);
         return ds;
     }
+
+    public Dataset<Row> recollectDataset(String original) throws VerdictException{
+        VerdictLogger.debug(this,"reissue "+original);
+        Dataset<Row> ds = vc.getDbms().executeSpark2Query(original);
+        return ds;
+    }
+
+
+
+
 
     public List<List<Object>> collect() throws VerdictException {
         List<List<Object>> result = new ArrayList<List<Object>>();
