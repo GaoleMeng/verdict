@@ -40,6 +40,9 @@ import edu.umich.verdict.util.VerdictLogger;
 public class VerdictSpark2Context extends VerdictContext {
 
     private Dataset<Row> df;
+    private SparkContext this_sc;
+    private  SparkSession this_session;
+
 
     public VerdictSpark2Context(SparkContext sc) throws VerdictException {
         this(sc, new VerdictConf());
@@ -48,7 +51,9 @@ public class VerdictSpark2Context extends VerdictContext {
     public VerdictSpark2Context(SparkContext sc, VerdictConf conf) throws VerdictException {
         super(conf);
         conf.setDbms("spark2");
+        this_sc =sc;
         SparkSession sparkSession = SparkSession.builder().getOrCreate();
+        this_session = sparkSession;
         setDbms(new DbmsSpark2(this, sparkSession, conf));
         setMeta(new VerdictMeta(this));
     }
@@ -79,5 +84,13 @@ public class VerdictSpark2Context extends VerdictContext {
     
     public Dataset<Row> sql(String sql) throws VerdictException {
         return executeSpark2Query(sql);
+    }
+
+    public SparkContext getThis_sc(){
+        return this_sc;
+    }
+
+    public SparkSession getThis_session(){
+        return this_session;
     }
 }

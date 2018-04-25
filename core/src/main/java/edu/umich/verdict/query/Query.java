@@ -18,10 +18,15 @@ package edu.umich.verdict.query;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 
 //import org.apache.spark.sql.DataFrame;
 import edu.umich.verdict.VerdictConf;
+import edu.umich.verdict.VerdictJDBCContext;
+import edu.umich.verdict.VerdictSpark2Context;
 import edu.umich.verdict.datatypes.VerdictResultSet;
+import edu.umich.verdict.datatypes.VerdictDataset;
+import org.apache.spark.SparkContext;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
@@ -35,6 +40,7 @@ import edu.umich.verdict.parser.VerdictSQLParser;
 import edu.umich.verdict.relation.Relation;
 import edu.umich.verdict.util.StringManipulations;
 import edu.umich.verdict.util.VerdictLogger;
+import org.apache.spark.sql.SparkSession;
 
 /**
  * This class is responsible for instantiating the subclass that best suits to
@@ -82,10 +88,20 @@ public abstract class Query {
         if (vc.getDbms().isJDBC()) {
             ResultSet tmp = r.collectResultSet();
             try {
-                VerdictResultSet vrs = new VerdictResultSet(tmp);
-                vrs.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (new VerdictConf()).getTrustErrorBound());
-                vrs.deleteColumn("_verdict_group_count");
-                rs = vrs;
+
+                if(!new VerdictConf().getHACMethods().equals("doNothing")){
+                    VerdictResultSet vrs = new VerdictResultSet(tmp);
+                    boolean reissue =vrs.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (new VerdictConf()).getTrustErrorBound());
+                    if(reissue && new VerdictConf().getHACMethods().equals("reissue")){
+                        rs = r.recollectResultSet(queryString);
+                    }
+                    else if(reissue && new VerdictConf().getHACMethods().equals("specialSymbol"))
+                    {
+                        vrs.deleteColumn("_verdict_group_count");
+                        rs = vrs;
+                    }
+                }
+
             }
             catch (Exception e) {
                 throw new VerdictException();
@@ -107,7 +123,39 @@ public abstract class Query {
 //        } else if (vc.getDbms().isSpark()) {
 //            df = r.collectDataFrame();
         } else if (vc.getDbms().isSpark2()) {
-            ds = r.collectDataset();
+            Dataset<Row>tmp = r.collectDataset();
+            try {
+
+                VerdictDataset vds = new VerdictDataset(tmp);
+                boolean reissue = vds.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (new VerdictConf()).getTrustErrorBound());
+                vds.deleteColumn("_verdict_group_count");
+                SparkContext sc = ((VerdictSpark2Context) vc).getThis_sc();
+                SparkSession spark = ((VerdictSpark2Context) vc).getThis_session();
+                ds = vds.convertToDS(sc,spark);
+//                if((!new VerdictConf().getHACMethods().equals("doNothing"))){
+//                    System.out.print("checkpoint1");
+//                    VerdictDataset vds = new VerdictDataset(ds);
+//                    System.out.print("checkpoint2");
+//                    boolean reissue = vds.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (new VerdictConf()).getTrustErrorBound());
+//                    System.out.print("checkpoint3");
+//                    if( reissue && new VerdictConf().getHACMethods().equals("reissue")){
+//                        ds = r.recollectDataset(queryString);
+//                        System.out.print("checkpoint4");
+//                    }
+//                    else{
+//                        vds.deleteColumn("_verdict_group_count");
+//                        System.out.println("change the verdictDataset into Dataset");
+//                        SparkContext sc = ((VerdictSpark2Context) vc).getThis_sc();
+//                        Dataset<Row> tmp = vds.convertToDS(sc);
+//
+//
+//
+//                    }
+//                }
+            }
+            catch (Exception e) {
+                throw new VerdictException();
+            }
 
         }
     }

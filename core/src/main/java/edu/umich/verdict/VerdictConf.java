@@ -190,6 +190,8 @@ public class VerdictConf {
 
     public float getTrustErrorBound() { return Float.parseFloat(get("verdict.error_bound.trust_error_bound")); }
 
+    public String getHACMethods(){return get("verdict.error_bound.HAC");}
+
     public String getDbmsSchema() {
         return get("verdict.jdbc.schema");
     }
