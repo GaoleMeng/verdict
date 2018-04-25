@@ -125,33 +125,32 @@ public abstract class Query {
         } else if (vc.getDbms().isSpark2()) {
             Dataset<Row>tmp = r.collectDataset();
             try {
+//                this part is for developing
+//                VerdictDataset vds = new VerdictDataset(tmp);
+//                boolean reissue = vds.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (new VerdictConf()).getTrustErrorBound());
+//                vds.deleteColumn("_verdict_group_count");
+//                SparkContext sc = ((VerdictSpark2Context) vc).getThis_sc();
+//                SparkSession spark = ((VerdictSpark2Context) vc).getThis_session();
+//                ds = vds.convertToDS(sc,spark);
 
-                VerdictDataset vds = new VerdictDataset(tmp);
-                boolean reissue = vds.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (new VerdictConf()).getTrustErrorBound());
-                vds.deleteColumn("_verdict_group_count");
-                SparkContext sc = ((VerdictSpark2Context) vc).getThis_sc();
-                SparkSession spark = ((VerdictSpark2Context) vc).getThis_session();
-                ds = vds.convertToDS(sc,spark);
-//                if((!new VerdictConf().getHACMethods().equals("doNothing"))){
-//                    System.out.print("checkpoint1");
-//                    VerdictDataset vds = new VerdictDataset(ds);
-//                    System.out.print("checkpoint2");
-//                    boolean reissue = vds.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (new VerdictConf()).getTrustErrorBound());
-//                    System.out.print("checkpoint3");
-//                    if( reissue && new VerdictConf().getHACMethods().equals("reissue")){
-//                        ds = r.recollectDataset(queryString);
-//                        System.out.print("checkpoint4");
-//                    }
-//                    else{
-//                        vds.deleteColumn("_verdict_group_count");
-//                        System.out.println("change the verdictDataset into Dataset");
-//                        SparkContext sc = ((VerdictSpark2Context) vc).getThis_sc();
-//                        Dataset<Row> tmp = vds.convertToDS(sc);
-//
-//
-//
-//                    }
-//                }
+
+                if((!new VerdictConf().getHACMethods().equals("doNothing"))){
+
+                    VerdictDataset vds = new VerdictDataset(tmp);
+                    boolean reissue = vds.checkAndRevise((new VerdictConf()).getMinimumGroupSize(), (new VerdictConf()).getTrustErrorBound());
+                    if( reissue && new VerdictConf().getHACMethods().equals("reissue")){
+
+                        ds = r.recollectDataset(queryString);
+                    }
+                    else{
+                        vds.deleteColumn("_verdict_group_count");
+
+                        SparkContext sc = ((VerdictSpark2Context) vc).getThis_sc();
+                        SparkSession spark = ((VerdictSpark2Context) vc).getThis_session();
+                        ds = vds.convertToDS(sc,spark);
+
+                    }
+                }
             }
             catch (Exception e) {
                 throw new VerdictException();
